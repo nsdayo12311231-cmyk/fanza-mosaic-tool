@@ -7,49 +7,76 @@ FANZA同人に出版する画像を、FANZA隠蔽処理規約第6条に準拠し
 - **完全自動化**: 性器検出からモザイク処理まで全自動実行
 - **FANZA規約準拠**: 第6条の隠蔽処理規約に完全準拠
 - **アニメ/イラスト特化**: アニメ系画像での高精度検出
-- **ワンクリック実行**: 画像アップロードのみで処理開始
+- **CLI優先**: エンジニア向けのコマンドラインインターフェース
 - **高速処理**: 1枚あたり5秒以内での完了
-- **クラウド対応**: Renderでの無料デプロイ
+- **設定可能**: YAMLファイルでの詳細設定
 
 ## 🚀 セットアップ
 
-### 1. 依存関係のインストール
+### 1. リポジトリのクローン
+
+```bash
+git clone https://github.com/nsdayo12311231-cmyk/fanza-mosaic-tool.git
+cd fanza-mosaic-tool
+```
+
+### 2. 依存関係のインストール
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. フォルダ構造の確認
+### 3. 設定ファイルの初期化（オプション）
 
-```
-mozaic/
-├── input/          # 元画像格納フォルダ（ローカル実行時）
-├── output/         # 処理成功画像保存フォルダ（ローカル実行時）
-├── error/          # 処理失敗画像保存フォルダ（ローカル実行時）
-├── app.py          # メインアプリケーション
-├── mosaic_processor.py  # モザイク処理エンジン
-├── requirements.txt      # 依存関係定義
-├── render.yaml           # Renderデプロイ設定
-└── README.md            # 使用方法説明書
+```bash
+python -m src.cli init-config config/user_config.yaml
 ```
 
 ## 📖 使用方法
 
-### 1. ローカル実行
+### 基本的な使用方法
+
+#### 単一画像の処理
 
 ```bash
-streamlit run app.py
+# 基本的な使用方法
+python -m src.cli process input.jpg output.jpg
+
+# カスタムモザイクサイズを指定
+python -m src.cli process input.jpg output.jpg --mosaic-size 8
+
+# 既存ファイルの上書き
+python -m src.cli process input.jpg output.jpg --force
 ```
 
-### 2. 画像の処理
-1. ブラウザでアプリケーションにアクセス
-2. 画像をアップロード（複数選択可能）
-3. 「処理開始」ボタンをクリック
-4. 処理完了後、結果をダウンロード
+#### 複数画像の一括処理
 
-### 3. 結果の確認
-- **成功**: 処理済み画像をダウンロード
-- **失敗**: エラーメッセージが表示
+```bash
+# ディレクトリ内の全画像を処理
+python -m src.cli batch input_dir/ output_dir/
+
+# サブディレクトリも含めて処理
+python -m src.cli batch input_dir/ output_dir/ --recursive
+
+# 特定のパターンのファイルのみ処理
+python -m src.cli batch input_dir/ output_dir/ --pattern "*.jpg"
+```
+
+#### 設定と情報
+
+```bash
+# 設定ファイルの初期化
+python -m src.cli init-config config/my_config.yaml
+
+# カスタム設定ファイルを使用
+python -m src.cli --config config/my_config.yaml process input.jpg output.jpg
+
+# システム情報の表示
+python -m src.cli info
+
+# 詳細ログの出力
+python -m src.cli --verbose process input.jpg output.jpg
+```
 
 ## 🔧 FANZA規約対応
 
@@ -69,68 +96,124 @@ streamlit run app.py
 - **処理方法**: ピクセル化 + 境界線ぼかし
 - **適用範囲**: 検出された性器領域全体
 
-## 🌐 Render でのデプロイ
+## ⚙️ 設定ファイル
 
-### 1. GitHubリポジトリの準備
-```bash
-git add .
-git commit -m "Update for Render deployment"
-git push origin main
+### デフォルト設定 (config/default.yaml)
+
+```yaml
+# モザイク設定
+mosaic:
+  min_size: 4          # 最小モザイクサイズ
+  scale_factor: 0.01   # スケール係数（1%）
+  blur_radius: 3       # ぼかし半径
+
+# 検出設定
+detection:
+  confidence: 0.5      # 検出信頼度
+  model_complexity: 1  # モデル複雑度
+  max_image_size: 1024 # 最大画像サイズ
+
+# 出力設定
+output:
+  format: "png"        # 出力形式
+  quality: 95          # 画像品質
+  prefix: "processed_" # ファイル名プレフィックス
 ```
 
-### 2. Renderでの設定
-1. [Render](https://render.com/)にアクセス
-2. GitHubアカウントでログイン
-3. 「New +」→「Web Service」をクリック
-4. GitHubリポジトリを連携
-5. 以下の設定を行う：
-   - **Name**: `fanza-mosaic-tool`
-   - **Environment**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`
-6. 「Create Web Service」をクリック
+### カスタム設定
 
-### 3. 共有方法
-生成されたURL（例：`https://fanza-mosaic-tool.onrender.com`）を共有するだけです。
+`config/user_config.yaml`を作成して、デフォルト設定を上書きできます。
+
+## 📁 プロジェクト構造
+
+```
+mozaic/
+├── src/                    # ソースコード
+│   ├── __init__.py
+│   ├── mosaic_processor.py # モザイク処理エンジン
+│   └── cli.py             # CLIインターフェース
+├── config/                 # 設定ファイル
+│   ├── default.yaml       # デフォルト設定
+│   └── user_config.yaml   # ユーザー設定
+├── tests/                  # テストコード
+├── examples/               # 使用例
+├── docs/                   # ドキュメント
+├── requirements.txt        # 依存関係定義
+├── setup.py               # インストール設定
+├── README.md              # 使用方法説明書
+└── requirements.md         # 要件定義書
+```
+
+## 🌐 GitHubでの共有
+
+### 共有方法
+
+1. **リポジトリのクローン**
+   ```bash
+   git clone https://github.com/nsdayo12311231-cmyk/fanza-mosaic-tool.git
+   ```
+
+2. **依存関係のインストール**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **設定ファイルのカスタマイズ**
+   ```bash
+   python -m src.cli init-config config/user_config.yaml
+   ```
+
+4. **CLIコマンドでの実行**
+   ```bash
+   python -m src.cli process input.jpg output.jpg
+   ```
 
 ## ⚠️ 注意事項
 
-- 処理に失敗した画像はエラーメッセージが表示されます
+- **対象ユーザー**: プログラミング経験のあるエンジニア
+- **実行環境**: ローカル環境での実行のみ
+- **サーバー公開**: なし（GitHubでのコード共有）
+- 処理に失敗した画像はログに記録されます
 - 高解像度画像は処理時間が長くなる場合があります
 - アニメ/イラスト系の画像に最適化されています
-- Renderの無料プランは15分でスリープします
 
 ## 🐛 トラブルシューティング
 
 ### よくある問題
 
-1. **性器領域が検出されない**
-   - 画像の解像度を確認
-   - 人体が明確に描かれているか確認
+1. **依存関係のエラー**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-2. **処理が遅い**
-   - 画像サイズを確認
-   - 同時処理数を減らす
+2. **画像読み込みエラー**
+   - ファイルパスの確認
+   - ファイル形式の確認
+   - ファイルの破損確認
 
-3. **エラーが発生する**
-   - ログを確認
-   - 画像形式が対応しているか確認
+3. **処理速度が遅い**
+   - 画像サイズの確認
+   - 設定ファイルでの最適化
+   - 並列処理数の調整
 
 ## 📝 技術仕様
 
 ### 使用技術
 - **Python 3.9+**
 - **MediaPipe**: Google提供の人体検出ライブラリ
-- **OpenCV**: 高速画像処理ライブラリ（ヘッドレス版）
-- **Streamlit**: Web UIフレームワーク
+- **OpenCV**: 高速画像処理ライブラリ
+- **Click**: Python CLIフレームワーク
+- **PyYAML**: 設定ファイル管理
 
 ### 処理フロー
-1. 画像アップロード・前処理
-2. MediaPipeによる人体・性器検出
-3. 検出領域の自動特定
-4. FANZA規約準拠のピクセル化モザイク
-5. 境界線のぼかし処理
-6. 結果のダウンロード提供
+1. コマンドライン引数の解析
+2. 設定ファイルの読み込み
+3. 画像読み込み・前処理
+4. MediaPipeによる人体・性器検出
+5. 検出領域の自動特定
+6. FANZA規約準拠のピクセル化モザイク
+7. 境界線のぼかし処理
+8. 結果保存・ログ出力
 
 ## 🤝 貢献
 
@@ -143,5 +226,5 @@ git push origin main
 ---
 
 **作成日**: 2024年12月  
-**バージョン**: 2.0 (Render対応版)  
+**バージョン**: 2.0 (GitHub共有・エンジニア向け版)  
 **作成者**: AI Assistant

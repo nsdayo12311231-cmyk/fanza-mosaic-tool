@@ -1,0 +1,38 @@
+# FANZAモザイクツール デフォルト設定
+# このファイルをコピーして user_config.yaml としてカスタマイズしてください
+
+# モザイク設定
+mosaic:
+  # 最小モザイクサイズ（ピクセル）
+  min_size: 4
+  # 画像長辺に対するスケール係数（FANZA規約: 1/100）
+  scale_factor: 0.01
+  # 境界線のぼかし半径
+  blur_radius: 3
+
+# 検出設定
+detection:
+  # 検出信頼度の閾値
+  confidence: 0.5
+  # MediaPipeモデルの複雑度（1: 軽量, 2: 標準）
+  model_complexity: 1
+  # 処理用の最大画像サイズ
+  max_image_size: 1024
+
+# 出力設定
+output:
+  # 出力画像形式
+  format: "png"
+  # 画像品質（JPEGの場合）
+  quality: 95
+  # 出力ファイル名のプレフィックス
+  prefix: "processed_"
+
+# ログ設定
+logging:
+  # ログレベル (DEBUG, INFO, WARNING, ERROR)
+  level: "INFO"
+  # ログファイルの出力
+  file_output: false
+  # ログファイルパス
+  log_file: "mosaic_tool.log"
