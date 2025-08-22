@@ -18,12 +18,13 @@ class FanzaMosaicProcessor:
     def __init__(self):
         """初期化"""
         try:
+            # MediaPipeの初期化を軽量化
             self.mp_pose = mp.solutions.pose
             self.pose = self.mp_pose.Pose(
                 static_image_mode=True,
-                model_complexity=1,  # 軽量化
-                enable_segmentation=False,  # 無効化で軽量化
-                min_detection_confidence=0.3  # 閾値を下げて検出率向上
+                model_complexity=0,  # 最も軽量
+                enable_segmentation=False,
+                min_detection_confidence=0.2  # 閾値を下げて検出率向上
             )
             logger.info("MediaPipe Pose初期化完了")
         except Exception as e:
@@ -58,10 +59,10 @@ class FanzaMosaicProcessor:
             return []
         
         try:
-            # 画像サイズを調整（処理速度向上）
+            # 画像サイズを大幅に調整（処理速度向上）
             h, w = image.shape[:2]
-            if max(h, w) > 1024:
-                scale = 1024 / max(h, w)
+            if max(h, w) > 800:  # より小さく調整
+                scale = 800 / max(h, w)
                 new_w, new_h = int(w * scale), int(h * scale)
                 resized_image = cv2.resize(image, (new_w, new_h))
             else:
@@ -87,7 +88,7 @@ class FanzaMosaicProcessor:
             left_hip = landmarks[self.mp_pose.PoseLandmark.LEFT_HIP]
             right_hip = landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP]
             
-            if left_hip.visibility > 0.3 and right_hip.visibility > 0.3:
+            if left_hip.visibility > 0.2 and right_hip.visibility > 0.2:  # 閾値を下げる
                 # 腰周辺の矩形領域を作成
                 left_x = int(left_hip.x * new_w / scale)
                 right_x = int(right_hip.x * new_w / scale)
@@ -95,10 +96,10 @@ class FanzaMosaicProcessor:
                 
                 # 性器領域の推定（腰から下）
                 sensitive_area = np.array([
-                    [left_x - 30, hip_y],
-                    [right_x + 30, hip_y],
-                    [right_x + 30, h],
-                    [left_x - 30, h]
+                    [left_x - 25, hip_y],
+                    [right_x + 25, hip_y],
+                    [right_x + 25, h],
+                    [left_x - 25, h]
                 ], dtype=np.int32)
                 
                 sensitive_areas.append(sensitive_area)
@@ -154,7 +155,7 @@ class FanzaMosaicProcessor:
         モザイク境界の簡易ぼかし処理（軽量化版）
         """
         try:
-            blur_radius = 5
+            blur_radius = 3  # より小さく調整
             
             # 境界周辺の簡易ぼかし
             if y_min - blur_radius >= 0:
