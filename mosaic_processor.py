@@ -13,16 +13,20 @@ logger = logging.getLogger(__name__)
 class FanzaMosaicProcessor:
     """
     FANZA隠蔽処理規約に準拠したモザイク処理エンジン
+    Render対応版
     """
     
     def __init__(self):
         """初期化"""
+        # Render環境でのOpenCV設定
+        os.environ['OPENCV_VIDEOIO_PRIORITY_MSMF'] = '0'
+        
         self.mp_pose = mp.solutions.pose
         self.mp_face_detection = mp.solutions.face_detection
         self.pose = self.mp_pose.Pose(
             static_image_mode=True,
-            model_complexity=2,
-            enable_segmentation=True,
+            model_complexity=1,  # Render環境での軽量化
+            enable_segmentation=False,  # メモリ使用量削減
             min_detection_confidence=0.5
         )
         
@@ -44,10 +48,22 @@ class FanzaMosaicProcessor:
     def detect_sensitive_areas(self, image: np.ndarray) -> List[np.ndarray]:
         """
         MediaPipeを使用して性器領域を検出
+        Render環境最適化版
         """
         try:
+            # 画像サイズの最適化（Render環境での処理速度向上）
+            h, w = image.shape[:2]
+            if h > 1024 or w > 1024:
+                scale_factor = min(1024 / h, 1024 / w)
+                new_h, new_w = int(h * scale_factor), int(w * scale_factor)
+                resized_image = cv2.resize(image, (new_w, new_h))
+                logger.info(f"画像をリサイズ: {w}x{h} -> {new_w}x{new_h}")
+            else:
+                resized_image = image
+                scale_factor = 1.0
+            
             # RGB変換（MediaPipeはRGBを要求）
-            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            rgb_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)
             
             # ポーズ検出
             results = self.pose.process(rgb_image)
@@ -61,7 +77,7 @@ class FanzaMosaicProcessor:
             
             if results.pose_landmarks:
                 landmarks = results.pose_landmarks.landmark
-                h, w = image.shape[:2]
+                h_resized, w_resized = resized_image.shape[:2]
                 
                 # 腰の位置を特定（MediaPipe Poseのインデックス）
                 left_hip = landmarks[self.mp_pose.PoseLandmark.LEFT_HIP]
@@ -69,17 +85,21 @@ class FanzaMosaicProcessor:
                 
                 if left_hip.visibility > 0.5 and right_hip.visibility > 0.5:
                     # 腰周辺の矩形領域を作成
-                    left_x = int(left_hip.x * w)
-                    right_x = int(right_hip.x * w)
-                    hip_y = int(left_hip.y * h)
+                    left_x = int(left_hip.x * w_resized)
+                    right_x = int(right_hip.x * w_resized)
+                    hip_y = int(left_hip.y * h_resized)
                     
                     # 性器領域の推定（腰から下）
                     sensitive_area = np.array([
                         [left_x - 20, hip_y],
                         [right_x + 20, hip_y],
-                        [right_x + 20, h],
-                        [left_x - 20, h]
+                        [right_x + 20, h_resized],
+                        [left_x - 20, h_resized]
                     ], dtype=np.int32)
+                    
+                    # 元の画像サイズにスケール戻し
+                    if scale_factor != 1.0:
+                        sensitive_area = (sensitive_area / scale_factor).astype(np.int32)
                     
                     sensitive_areas.append(sensitive_area)
                     logger.info(f"性器領域を検出: {sensitive_area}")
@@ -94,6 +114,7 @@ class FanzaMosaicProcessor:
                      mosaic_size: int) -> np.ndarray:
         """
         指定された領域にモザイクを適用
+        Render環境最適化版
         """
         result_image = image.copy()
         
@@ -118,47 +139,48 @@ class FanzaMosaicProcessor:
             
             result_image[y_min:y_max, x_min:x_max] = mosaic_region
             
-            # 境界線のぼかし処理
-            self._blur_boundaries(result_image, x_min, x_max, y_min, y_max, mosaic_size)
+            # 境界線のぼかし処理（軽量化版）
+            self._blur_boundaries_optimized(result_image, x_min, x_max, y_min, y_max, mosaic_size)
         
         return result_image
     
-    def _blur_boundaries(self, image: np.ndarray, x_min: int, x_max: int, 
-                         y_min: int, y_max: int, blur_size: int):
+    def _blur_boundaries_optimized(self, image: np.ndarray, x_min: int, x_max: int, 
+                                  y_min: int, y_max: int, blur_size: int):
         """
-        モザイク境界のぼかし処理
+        モザイク境界のぼかし処理（Render環境最適化版）
         """
-        blur_radius = max(3, blur_size // 2)
+        blur_radius = max(2, min(blur_size // 3, 5))  # ぼかし強度を制限
         
-        # 境界周辺のぼかし
-        for i in range(blur_radius):
+        # 境界周辺のぼかし（処理量を削減）
+        for i in range(1, blur_radius + 1):
             # 上境界
             if y_min - i >= 0:
                 cv2.GaussianBlur(image[y_min-i:y_min+i+1, x_min:x_max], 
-                                (blur_radius, blur_radius), 0, 
+                                (3, 3), 0, 
                                 dst=image[y_min-i:y_min+i+1, x_min:x_max])
             
             # 下境界
             if y_max + i < image.shape[0]:
                 cv2.GaussianBlur(image[y_max-i:y_max+i+1, x_min:x_max], 
-                                (blur_radius, blur_radius), 0, 
+                                (3, 3), 0, 
                                 dst=image[y_max-i:y_max+i+1, x_min:x_max])
             
             # 左境界
             if x_min - i >= 0:
                 cv2.GaussianBlur(image[y_min:y_max, x_min-i:x_min+i+1], 
-                                (blur_radius, blur_radius), 0, 
+                                (3, 3), 0, 
                                 dst=image[y_min:y_max, x_min-i:x_min+i+1])
             
             # 右境界
             if x_max + i < image.shape[1]:
                 cv2.GaussianBlur(image[y_min:y_max, x_max-i:x_max+i+1], 
-                                (blur_radius, blur_radius), 0, 
+                                (3, 3), 0, 
                                 dst=image[y_min:y_max, x_max-i:x_max+i+1])
     
     def process_image(self, image_path: str, output_path: str) -> bool:
         """
         画像の完全処理（検出→モザイク→保存）
+        Render環境最適化版
         """
         try:
             logger.info(f"画像処理開始: {image_path}")
@@ -183,10 +205,13 @@ class FanzaMosaicProcessor:
             processed_image = self.apply_mosaic(image, sensitive_areas, mosaic_size)
             
             # 結果保存
-            cv2.imwrite(output_path, processed_image)
-            logger.info(f"処理完了: {output_path}")
-            
-            return True
+            success = cv2.imwrite(output_path, processed_image)
+            if success:
+                logger.info(f"処理完了: {output_path}")
+                return True
+            else:
+                logger.error(f"画像の保存に失敗: {output_path}")
+                return False
             
         except Exception as e:
             logger.error(f"画像処理中にエラーが発生: {e}")

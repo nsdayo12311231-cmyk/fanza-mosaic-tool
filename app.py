@@ -4,6 +4,8 @@ import time
 from pathlib import Path
 from mosaic_processor import FanzaMosaicProcessor
 import logging
+import tempfile
+import shutil
 
 # ページ設定
 st.set_page_config(
@@ -26,41 +28,33 @@ def main():
     # 説明
     st.markdown("""
     ### 📋 使用方法
-    1. **input**フォルダにモザイクをかけたい画像を配置
+    1. **画像をアップロード**または**input**フォルダに配置
     2. 「処理開始」ボタンをクリック
-    3. 処理完了後、**output**フォルダに結果が保存されます
+    3. 処理完了後、結果をダウンロード
     
     ### ⚠️ 注意事項
     - FANZA隠蔽処理規約第6条に準拠した処理を行います
-    - 処理に失敗した画像は**error**フォルダに移動されます
+    - 処理に失敗した画像はエラーとして表示されます
     - 対応形式: PNG, JPG, JPEG
     """)
     
-    # フォルダ状況の表示
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        input_count = len([f for f in os.listdir("input") if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
-        st.metric("📁 入力画像数", input_count)
-    
-    with col2:
-        output_count = len([f for f in os.listdir("output") if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
-        st.metric("✅ 処理済み画像数", output_count)
-    
-    with col3:
-        error_count = len([f for f in os.listdir("error") if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
-        st.metric("❌ エラー画像数", error_count)
-    
-    st.markdown("---")
+    # ファイルアップロード機能
+    st.markdown("### 📤 画像アップロード")
+    uploaded_files = st.file_uploader(
+        "モザイクをかけたい画像を選択してください",
+        type=['png', 'jpg', 'jpeg'],
+        accept_multiple_files=True,
+        help="複数の画像を同時に選択できます"
+    )
     
     # 処理開始ボタン
     if st.button("🚀 処理開始", type="primary", use_container_width=True):
-        if input_count == 0:
-            st.error("❌ inputフォルダに画像がありません")
+        if not uploaded_files:
+            st.error("❌ 画像がアップロードされていません")
             return
         
         # 処理実行
-        process_images()
+        process_uploaded_images(uploaded_files)
     
     # 処理状況の表示
     if 'processing_status' in st.session_state:
@@ -75,8 +69,8 @@ def main():
             else:
                 st.info(f"⏳ {status['filename']}: 処理中...")
 
-def process_images():
-    """画像の一括処理"""
+def process_uploaded_images(uploaded_files):
+    """アップロードされた画像の処理"""
     
     # 処理状況の初期化
     st.session_state.processing_status = []
@@ -85,70 +79,86 @@ def process_images():
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # 入力画像の取得
-    input_files = [f for f in os.listdir("input") 
-                   if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    
-    if not input_files:
-        st.error("処理対象の画像が見つかりません")
-        return
-    
     # モザイク処理エンジンの初期化
     processor = FanzaMosaicProcessor()
     
     try:
-        for i, filename in enumerate(input_files):
-            input_path = os.path.join("input", filename)
-            output_path = os.path.join("output", filename)
-            error_path = os.path.join("error", filename)
-            
+        processed_images = []
+        
+        for i, uploaded_file in enumerate(uploaded_files):
             # 進捗更新
-            progress = (i + 1) / len(input_files)
+            progress = (i + 1) / len(uploaded_files)
             progress_bar.progress(progress)
-            status_text.text(f"処理中: {filename} ({i+1}/{len(input_files)})")
+            status_text.text(f"処理中: {uploaded_file.name} ({i+1}/{len(uploaded_files)})")
             
             # 処理状況を更新
             st.session_state.processing_status.append({
-                'filename': filename,
+                'filename': uploaded_file.name,
                 'status': 'processing'
             })
             
-            # 画像処理実行
-            start_time = time.time()
-            success = processor.process_image(input_path, output_path)
-            processing_time = time.time() - start_time
+            # 一時ファイルとして保存
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_path = tmp_file.name
             
-            if success:
-                # 処理成功
-                st.session_state.processing_status[-1] = {
-                    'filename': filename,
-                    'status': 'success'
-                }
+            try:
+                # 画像処理実行
+                start_time = time.time()
+                success = processor.process_image(tmp_path, tmp_path)
+                processing_time = time.time() - start_time
                 
-                # 元ファイルを削除
-                os.remove(input_path)
+                if success:
+                    # 処理成功
+                    st.session_state.processing_status[-1] = {
+                        'filename': uploaded_file.name,
+                        'status': 'success'
+                    }
+                    
+                    # 処理済み画像をリストに追加
+                    with open(tmp_path, 'rb') as f:
+                        processed_images.append({
+                            'name': f"processed_{uploaded_file.name}",
+                            'data': f.read(),
+                            'type': uploaded_file.type
+                        })
+                    
+                    logger.info(f"処理成功: {uploaded_file.name} (処理時間: {processing_time:.2f}秒)")
+                    
+                else:
+                    # 処理失敗
+                    st.session_state.processing_status[-1] = {
+                        'filename': uploaded_file.name,
+                        'status': 'error',
+                        'message': '性器領域の検出に失敗'
+                    }
+                    
+                    logger.error(f"処理失敗: {uploaded_file.name}")
                 
-                logger.info(f"処理成功: {filename} (処理時間: {processing_time:.2f}秒)")
-                
-            else:
-                # 処理失敗
-                st.session_state.processing_status[-1] = {
-                    'filename': filename,
-                    'status': 'error',
-                    'message': '性器領域の検出に失敗'
-                }
-                
-                # エラーフォルダに移動
-                os.rename(input_path, error_path)
-                
-                logger.error(f"処理失敗: {filename}")
+            finally:
+                # 一時ファイルの削除
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
         
         # 完了
         progress_bar.progress(1.0)
         status_text.text("✅ 全処理完了！")
         
         # 結果表示
-        st.success(f"🎉 処理完了！ {len(input_files)}枚の画像を処理しました")
+        if processed_images:
+            st.success(f"🎉 処理完了！ {len(processed_images)}枚の画像が処理されました")
+            
+            # ダウンロードボタンの表示
+            st.markdown("### 📥 処理済み画像のダウンロード")
+            for img in processed_images:
+                st.download_button(
+                    label=f"📥 {img['name']} をダウンロード",
+                    data=img['data'],
+                    file_name=img['name'],
+                    mime=img['type']
+                )
+        else:
+            st.warning("⚠️ 処理に成功した画像がありません")
         
         # ページを再読み込み
         st.rerun()
